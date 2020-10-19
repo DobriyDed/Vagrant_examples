@@ -1,0 +1,62 @@
+$master_pub_key=""
+$script = <<-SCRIPT
+yum -y install java-1.8.0-openjdk git -q
+useradd -d /var/lib/jenkins jenkins
+sudo runuser -l jenkins -c 'echo -e "\n\n\n" | ssh-keygen -t rsa'
+sudo runuser -l jenkins -c 'cat /tmp/authorised_keys  >> /var/lib/jenkins/.ssh/authorized_keys'
+chown jenkins:jenkins /var/lib/jenkins/.ssh/authorized_keys
+chmod 600 /var/lib/jenkins/.ssh/authorized_keys
+rm -f /tmp/authorised+keys
+echo "Client done!"
+SCRIPT
+
+pub_key_path = "~/.ssh/id_rsa.pub"
+$vm_gui = false
+$instance_name_prefix = "TestLab"
+
+MACHINES = {
+        'node1' => { system: 'bento/centos-7', vcpu: '2', ram: '1024', ip: '192.168.100.61', size: '10240', file: "/disk2ssd/data_JNode1.vdi" },
+        'node2' => { system: 'bento/centos-7', vcpu: '2', ram: '1024', ip: '192.168.100.62', size: '10240', file: "/disk2ssd/data_JNode2.vdi" },
+        'node3' => { system: 'bento/centos-7', vcpu: '2', ram: '1024', ip: '192.168.100.63', size: '10240', file: "/disk2ssd/data_JNode3.vdi" },
+        'node4' => { system: 'bento/centos-7', vcpu: '2', ram: '1024', ip: '192.168.100.64', size: '10240', file: "/disk2ssd/data_JNode4.vdi" },
+}
+
+
+
+INSTANCES = MACHINES.flat_map do |server_name, server|
+        server.merge({
+                :vagrant_name => "#{server_name}",
+        })
+end
+
+Vagrant.configure("2") do |config|
+
+        INSTANCES.each do |instance|
+                config.vm.define instance[:vagrant_name] do |node|
+                        node.vm.box = instance[:system]
+                        node.vm.hostname = instance[:vagrant_name]
+                        node.vm.network "public_network", ip: instance[:ip], bridge: "enp2s0f0"
+                        node.vm.provider "virtualbox" do |vb|
+                                vb.gui = $vm_gui
+                                vb.memory = instance[:ram]
+                                vb.cpus = instance[:vcpu]
+                                if !File.exist?(instance[:file])
+                                  vb.customize ['createhd', '--filename',instance[:file], '--variant', 'Standard', '--size', instance[:size]]
+                                end
+                                vb.customize ['storageattach', :id, '--storagectl', 'SATA Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--mediu$
+                        end
+#                        node.vm.provision "file", source:pub_key_path, destination: "/tmp/pub_key.pub"
+#                        node.vm.provision "shell", inline: $script
+                         node.vm.provision "file",
+                                 source: "authorised_keys",
+                                 destination: "/tmp/authorised_keys"
+                         node.vm.provision "shell", inline: $script
+                         node.vm.provision 'Disabling swapfile for VM', type: 'shell' do |install|
+                           install.inline = 'sudo swapoff -a'
+                         end
+                         node.vm.provision "shell",
+                               run: "always",
+                         inline: "route add default gw 192.168.100.1"
+                end
+        end
+end
