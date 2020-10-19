@@ -1,0 +1,67 @@
+#Work not finished
+
+$script = <<-SCRIPT
+export DEBIANFRONTEND=noninteractive
+apt-get update && apt-get upgrade -yqq
+apt-get install -yqq htop mc net-tools
+cat /tmp/pub_key.pub >> /home/vagrant/.ssh/authorized_keys
+chown vagrant:vagrant /home/vagrant/.ssh/authorized_keys
+chmod 600 /home/vagrant/.ssh/authorized_keys
+SCRIPT
+
+pub_key_path = "~/.ssh/id_rsa.pub"
+$vm_gui = false
+$instance_name_prefix = "TestLab"
+
+#  name - is vagrat vm name
+MACHINES = {
+        'host1' => { system: 'bento/debian-10', vcpu: '1', ram: '512', ip: '10.20.30.20', size: '10240', file: "/disk2ssd/data_host1.vdi" },
+        'host2' => { system: 'bento/debian-10', vcpu: '1', ram: '512', ip: '10.20.30.21', size: '10240', file: "/disk2ssd/data_host2.vdi" },
+#        'host3' => { system: 'bento/centos-7', vcpu: '1', ram: '1024', ip: '10.20.30.23', size: '10240', file: "/disk2ssd/data_host3.vdi" },
+        'host4' => { system: 'bento/ubuntu-20.04', vcpu: '4', ram: '2048', ip: '10.20.30.24', size: '10240', file: "/disk2ssd/data_host4.vdi" },
+        'jump' => { system: 'bento/debian-10', vcpu: '1', ram: '512', ip: '10.20.30.22', size: '10240', file: "/disk2ssd/data_jump.vdi" },
+}
+
+
+
+INSTANCES = MACHINES.flat_map do |server_name, server|
+        server.merge({
+                :vagrant_name => "#{server_name}",
+        })
+end
+
+Vagrant.configure("2") do |config|
+        config.vm.synced_folder ".", "/vagrant", disabled: true
+        config.vm.provision "file",
+                source: "file.txt",
+                destination: "/tmp/file.txt"
+        config.vm.provision :shell, :path => "bootstrap.sh"
+
+        INSTANCES.each do |instance|
+                config.vm.define instance[:vagrant_name] do |node|
+#                       node.vm.box = "bento/debian-10"
+                        node.vm.box = instance[:system]
+                        node.vm.hostname = instance[:vagrant_name]
+                        node.vm.network "private_network", ip: instance[:ip]
+                        if instance[:vagrant_name] == "jump"
+                                node.vm.network "public_network", ip: "192.168.100.40", bridge: "enp2s0f0"
+                        end
+                        node.vm.provider "virtualbox" do |vb|
+                                vb.gui = $vm_gui
+                                vb.memory = instance[:ram]
+                                vb.cpus = instance[:vcpu]
+                                if !File.exist?(instance[:file])
+                                  vb.customize ['createhd', '--filename',instance[:file], '--variant', 'Standard', '--size', instance[:size]]
+                                end
+                                vb.customize ['storageattach', :id, '--storagectl', 'SATA Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--mediu$
+                        end
+                        node.vm.provision "file", source:pub_key_path, destination: "/tmp/pub_key.pub"
+                        node.vm.provision "shell", inline: $script
+                        node.vm.provision 'Disabling swapfile for VM', type: 'shell' do |install|
+                          install.inline = 'sudo swapoff -a'
+                        end
+
+
+                end
+        end
+end
