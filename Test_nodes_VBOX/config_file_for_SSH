@@ -1,0 +1,7 @@
+######################################
+## access to ansible
+Host home_bastion
+      User vagrant
+      HostName 192.168.100.40
+Host 10.20.30.2*
+      ProxyJump home_bastion
